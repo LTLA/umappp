@@ -70,12 +70,22 @@ TEST_P(OptimizeTest, Epochs) {
 TEST_P(OptimizeTest, BasicRun) {
     assemble(GetParam());
     auto epoch = umappp::similarities_to_epochs(stored, 500, 5.0);
+    auto epoch2 = epoch;
 
     std::vector<double> embedding(data);
-    std::mt19937_64 rng(10);
-    umappp::optimize_layout<>(5, embedding.data(), epoch, 2.0, 1.0, 1.0, 1.0, rng, 0);
+    {
+        std::mt19937_64 rng(10);
+        umappp::optimize_layout<-1>(5, embedding.data(), epoch, 2.0, 1.0, 1.0, 1.0, rng, 0);
+        EXPECT_NE(embedding, data); // some kind of change happened!
+    }
 
-    EXPECT_NE(embedding, data); // some kind of change happened!
+    // Same results with compile-time specification.
+    {
+        std::vector<double> embedding2(data);
+        std::mt19937_64 rng(10);
+        umappp::optimize_layout<5>(5, embedding2.data(), epoch2, 2.0, 1.0, 1.0, 1.0, rng, 0);
+        EXPECT_EQ(embedding, embedding2);
+    }
 }
 
 TEST_P(OptimizeTest, RestartedRun) {
@@ -84,14 +94,14 @@ TEST_P(OptimizeTest, RestartedRun) {
 
     std::vector<double> embedding(data);
     std::mt19937_64 rng(10);
-    umappp::optimize_layout<>(5, embedding.data(), epoch, 2.0, 1.0, 1.0, 1.0, rng, 100);
-    umappp::optimize_layout<>(5, embedding.data(), epoch, 2.0, 1.0, 1.0, 1.0, rng, 500);
+    umappp::optimize_layout<-1>(5, embedding.data(), epoch, 2.0, 1.0, 1.0, 1.0, rng, 100);
+    umappp::optimize_layout<-1>(5, embedding.data(), epoch, 2.0, 1.0, 1.0, 1.0, rng, 500);
 
     // Same results from a full single run.
     std::vector<double> embedding2(data);
     rng.seed(10);
     epoch = umappp::similarities_to_epochs(stored, 500, 5.0);
-    umappp::optimize_layout<>(5, embedding2.data(), epoch, 2.0, 1.0, 1.0, 1.0, rng, 0);
+    umappp::optimize_layout<-1>(5, embedding2.data(), epoch, 2.0, 1.0, 1.0, 1.0, rng, 0);
 
     EXPECT_EQ(embedding, embedding2);
 }

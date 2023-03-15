@@ -73,13 +73,15 @@ inline int choose_num_epochs(int num_epochs, size_t size) {
  *
  * @tparam Float Floating-point type.
  * Defaults to `double` to be conservative, but most applications can make do with `float` for some extra speed.
+ * @tparam dims Number of dimensions of the embedding to be created.
+ * This can be set to a positive number if this is known at compile time, otherwise a value of -1 will use the `ndims` argument in the various methods.
  *
  * @see
  * McInnes L, Healy J and Melville J (2020).
  * UMAP: Uniform Manifold Approximation and Projection for Dimension Reduction.
  * _arXiv_, https://arxiv.org/abs/1802.03426
  */
-template<typename Float = double>
+template<typename Float = double, int dims = -1>
 class Umap {
 public:
     /**
@@ -445,6 +447,7 @@ public:
 
         /** 
          * @param ndim Number of dimensions of the embedding.
+         * Ignored if templated `dims` is positive.
          * @param[in, out] embedding Two-dimensional array where rows are dimensions (`ndim`) and columns are observations.
          * This contains the initial coordinates and is updated to store the final embedding.
          * @param epoch_limit Number of epochs to run to.
@@ -455,8 +458,14 @@ public:
          * @return The status of the algorithm and the coordinates in `embedding` are updated to the specified number of epochs. 
          */
         void run(int ndim, Float* embedding, int epoch_limit = 0) {
+            if constexpr(dims != -1) {
+                if (ndim != dims) {
+                    throw new std::runtime_error("number of dimensions must match the compile-time specification");
+                }
+            }
+
             if (!rparams.batch) {
-                optimize_layout(
+                optimize_layout<dims>(
                     ndim,
                     embedding,
                     epochs,
@@ -490,6 +499,7 @@ public:
      * @param x Indices and distances to the nearest neighbors for each observation.
      * Note the expectations in the `NeighborList` documentation.
      * @param ndim Number of dimensions of the embedding.
+     * Ignored if templated `dims` is positive.
      * @param[in, out] embedding Two-dimensional array to store the embedding, 
      * where rows are dimensions (`ndim`) and columns are observations (`x.size()`).
      *
@@ -498,6 +508,12 @@ public:
      * otherwise, it is filled with initial coordinates.
      */
     Status initialize(NeighborList<Float> x, int ndim, Float* embedding) const {
+        if constexpr(dims != -1) {
+            if (ndim != dims) {
+                throw std::runtime_error("number of dimensions must match the compile-time specification");
+            }
+        }
+
         neighbor_similarities(x, local_connectivity, bandwidth);
         combine_neighbor_sets(x, mix_ratio);
 
@@ -534,6 +550,7 @@ public:
      * 
      * @param searcher Pointer to a `knncolle::Base` subclass with a `find_nearest_neighbors()` method.
      * @param ndim Number of dimensions of the embedding.
+     * Ignored if templated `dims` is positive.
      * @param[out] embedding Two-dimensional array to store the embedding, 
      * where rows are dimensions (`ndim`) and columns are observations (`searcher->nobs()`).
      *
@@ -575,6 +592,7 @@ public:
      * @param[in] input Pointer to a 2D array containing the input high-dimensional data, with number of rows and columns equal to `ndim_in` and `nobs`, respectively.
      * The array is treated as column-major where each row corresponds to a dimension and each column corresponds to an observation.
      * @param ndim_out Number of dimensions of the embedding.
+     * Ignored if templated `dims` is positive.
      * @param[out] embedding Two-dimensional array to store the embedding, 
      * where rows are dimensions (`ndim`) and columns are observations (`searcher->nobs()`).
      *
@@ -598,6 +616,7 @@ public:
      * 
      * @param searcher Pointer to a `knncolle::Base` subclass with a `find_nearest_neighbors()` method.
      * @param ndim Number of dimensions of the embedding.
+     * Ignored if templated `dims` is positive.
      * @param[in, out] embedding Two-dimensional array where rows are dimensions (`ndim`) and columns are observations (`searcher->nobs()`).
      * This is filled with the final embedding on output.
      * If `set_initialize()` is false, this is assumed to contain the initial coordinates on input.
@@ -617,6 +636,7 @@ public:
      * @param x Indices and distances to the nearest neighbors for each observation.
      * Note the expectations in the `NeighborList` documentation.
      * @param ndim Number of dimensions of the embedding.
+     * Ignored if templated `dims` is positive.
      * @param[in, out] embedding Two-dimensional array where rows are dimensions (`ndim`) and columns are observations.
      * This is filled with the final embedding on output.
      * If `set_initialize()` is `NONE` or if spectral initialization fails with `SPECTRAL_ONLY`, `embedding` is assumed to contain the initial coordinates on input.
@@ -640,6 +660,7 @@ public:
      * @param[in] input Pointer to a 2D array containing the input high-dimensional data, with number of rows and columns equal to `ndim_in` and `nobs`, respectively.
      * The array is treated as column-major where each row corresponds to a dimension and each column corresponds to an observation.
      * @param ndim_out Number of dimensions of the embedding.
+     * Ignored if templated `dims` is positive.
      * @param[in, out] embedding Two-dimensional array where rows are dimensions (`ndim`) and columns are observations (`searcher->nobs()`).
      * This is filled with the final embedding on output.
      * If `set_initialize()` is `NONE` or if spectral initialization fails with `SPECTRAL_ONLY`, `embedding` is assumed to contain the initial coordinates on input.

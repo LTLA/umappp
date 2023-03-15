@@ -68,12 +68,22 @@ EpochData<Float> similarities_to_epochs(const NeighborList<Float>& p, int num_ep
     return output;       
 }
 
-template<typename Float>
+template<int dims, typename Float>
 Float quick_squared_distance(const Float* left, const Float* right, int ndim) {
     Float dist2 = 0;
-    for (int d = 0; d < ndim; ++d, ++left, ++right) {
-        dist2 += (*left - *right) * (*left - *right);
+
+    if constexpr(dims == -1) {
+        for (int d = 0; d < ndim; ++d, ++left, ++right) {
+            Float diff = *left - *right;
+            dist2 += diff * diff;
+        }
+    } else {
+        for (int d = 0; d < dims; ++d, ++left, ++right) {
+            Float diff = *left - *right;
+            dist2 += diff * diff;
+        }
     }
+
     constexpr Float dist_eps = std::numeric_limits<Float>::epsilon();
     return std::max(dist_eps, dist2);
 }
@@ -85,7 +95,7 @@ Float clamp(Float input) {
     return std::min(std::max(input, min_gradient), max_gradient);
 }
 
-template<bool batch, typename Float, class Setup, class Rng> 
+template<bool batch, int dims, typename Float, class Setup, class Rng> 
 void optimize_sample(
     size_t i,
     int ndim,
@@ -117,24 +127,32 @@ void optimize_sample(
         }
 
         Float* right = embedding + tail[j] * ndim;
-        Float dist2 = quick_squared_distance(left, right, ndim);
+        Float dist2 = quick_squared_distance<dims>(left, right, ndim);
         const Float pd2b = std::pow(dist2, b);
         const Float grad_coef = (-2 * a * b * pd2b) / (dist2 * (a * pd2b + 1.0));
         {
             Float* lcopy = left;
             Float* rcopy = right;
 
-            for (int d = 0; d < ndim; ++d, ++lcopy, ++rcopy) {
-                Float gradient = alpha * clamp(grad_coef * (*lcopy - *rcopy));
-                if constexpr(!batch) {
+            if constexpr(dims != -1) {
+                for (int d = 0; d < dims; ++d, ++lcopy, ++rcopy) {
+                    Float gradient = alpha * clamp(grad_coef * (*lcopy - *rcopy));
                     *lcopy += gradient;
                     *rcopy -= gradient;
-                } else {
-                    // Doubling as we'll assume symmetry from the same
-                    // force applied by the right node. This allows us to
-                    // avoid worrying about accounting for modifications to
-                    // the right node.
-                    buffer[d] += 2 * gradient;
+                }
+            } else {
+                for (int d = 0; d < ndim; ++d, ++lcopy, ++rcopy) {
+                    Float gradient = alpha * clamp(grad_coef * (*lcopy - *rcopy));
+                    if constexpr(!batch) {
+                        *lcopy += gradient;
+                        *rcopy -= gradient;
+                    } else {
+                        // Doubling as we'll assume symmetry from the same
+                        // force applied by the right node. This allows us to
+                        // avoid worrying about accounting for modifications to
+                        // the right node.
+                        buffer[d] += 2 * gradient;
+                    }
                 }
             }
         }
@@ -151,17 +169,25 @@ void optimize_sample(
             }
 
             Float* right = embedding + sampled * ndim;
-            Float dist2 = quick_squared_distance(left, right, ndim);
+            Float dist2 = quick_squared_distance<dims>(left, right, ndim);
             const Float grad_coef = 2 * gamma * b / ((0.001 + dist2) * (a * std::pow(dist2, b) + 1.0));
             {
                 Float* lcopy = left;
                 const Float* rcopy = right;
-                for (int d = 0; d < ndim; ++d, ++lcopy, ++rcopy) {
-                    Float gradient = alpha * clamp(grad_coef * (*lcopy - *rcopy));
-                    if constexpr(!batch) {
+
+                if constexpr(dims != -1) {
+                    for (int d = 0; d < dims; ++d, ++lcopy, ++rcopy) {
+                        Float gradient = alpha * clamp(grad_coef * (*lcopy - *rcopy));
                         *lcopy += gradient;
-                    } else {
-                        buffer[d] += gradient;
+                    }
+                } else {
+                    for (int d = 0; d < ndim; ++d, ++lcopy, ++rcopy) {
+                        Float gradient = alpha * clamp(grad_coef * (*lcopy - *rcopy));
+                        if constexpr(!batch) {
+                            *lcopy += gradient;
+                        } else {
+                            buffer[d] += gradient;
+                        }
                     }
                 }
             }
@@ -176,7 +202,7 @@ void optimize_sample(
     }
 }
 
-template<typename Float, class Setup, class Rng>
+template<int dims, typename Float, class Setup, class Rng>
 void optimize_layout(
     int ndim,
     Float* embedding, 
@@ -199,7 +225,7 @@ void optimize_layout(
         const Float epoch = n;
         const Float alpha = initial_alpha * (1.0 - epoch / num_epochs);
         for (size_t i = 0; i < setup.head.size(); ++i) {
-            optimize_sample<false>(i, ndim, embedding, static_cast<Float*>(NULL), setup, a, b, gamma, alpha, rng, epoch);
+            optimize_sample<false, dims>(i, ndim, embedding, static_cast<Float*>(NULL), setup, a, b, gamma, alpha, rng, epoch);
         }
     }
 
@@ -263,7 +289,7 @@ inline void optimize_layout_batched(
                 size_t shift = i * ndim;
                 std::copy(reference + shift, reference + shift + ndim, buffer.data());
                 auto rng = creator(seeds[i]);
-                optimize_sample<true>(i, ndim, reference, buffer.data(), setup, a, b, gamma, alpha, rng, epoch);
+                optimize_sample<true, -1>(i, ndim, reference, buffer.data(), setup, a, b, gamma, alpha, rng, epoch);
                 std::copy(buffer.begin(), buffer.end(), output + shift);
 
 #ifndef UMAPPP_CUSTOM_PARALLEL
