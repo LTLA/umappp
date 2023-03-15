@@ -459,9 +459,7 @@ public:
          */
         void run(int ndim, Float* embedding, int epoch_limit = 0) {
             if constexpr(dims != -1) {
-                if (ndim != dims) {
-                    throw new std::runtime_error("number of dimensions must match the compile-time specification");
-                }
+                ndim = dims;
             }
 
             if (!rparams.batch) {
